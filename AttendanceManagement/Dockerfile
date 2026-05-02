@@ -15,7 +15,6 @@ COPY --from=build /app/out ./out
 COPY lib ./lib
 COPY web ./web
 COPY database ./database
-COPY config.properties ./config.properties
 
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75"
 
