@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timetable - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/attendease-logo-icon.png">
+<meta name="theme-color" content="#05110a">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon">🎓</div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+      
+    </div>
+  </aside>
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title">Schedules</h2>
+      <div class="top-bar-right" id="ttAddBtn">
+        <button type="button" class="btn btn-primary" onclick="openModal()">+ Add Schedule</button>
+      </div>
+    </header>
+    <div class="content-area">
+      <div class="timetable-grid" id="timetableGrid">
+        <div class="loading-row">Loading...</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Schedule</h3>
+      <button type="button" class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="ttForm">
+      <div class="form-group">
+        <label>Subject *</label>
+        <select id="fSubject" required><option value="">Select subject</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Day *</label>
+          <select id="fDay" required>
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option><option>Saturday</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Start Time *</label><input type="time" id="fStart" required></div>
+        <div class="form-group"><label>End Time *</label><input type="time" id="fEnd" required></div>
+      </div>
+      <div class="form-group"><label>Room</label><input type="text" id="fRoom" placeholder="e.g. Room 101"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+  requireAuth();
+  renderNav();
+
+  const ROLE = localStorage.getItem('role');
+  if (ROLE === 'student') {
+    document.getElementById('ttAddBtn').classList.add('hidden');
+  }
+
+  loadSubjectOptions();
+  loadTimetable();
+
+  const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  async function loadSubjectOptions() {
+    const data = await API.get('/api/subjects');
+    const sel = document.getElementById('fSubject');
+    if (data) {
+      sel.innerHTML = '<option value="">Select subject</option>';
+      data.forEach(subject => {
+        sel.innerHTML += `<option value="${subject.id}">${subject.name} (${subject.code})</option>`;
+      });
+    }
+  }
+
+  async function loadTimetable() {
+    const data = await API.get('/api/timetable');
+    const grid = document.getElementById('timetableGrid');
+    if (!data || data.length === 0) { grid.innerHTML = '<p class="empty-msg">No schedules yet</p>'; return; }
+
+    // Group by day
+    const byDay = {};
+    DAYS.forEach(d => byDay[d] = []);
+    data.forEach(t => { if (byDay[t.day_of_week]) byDay[t.day_of_week].push(t); });
+
+    grid.innerHTML = `
+      <div class="tt-header-row">
+        ${DAYS.map(d => `<div class="tt-day-header">${d}</div>`).join('')}
+      </div>
+      <div class="tt-body-row">
+        ${DAYS.map(d => `
+          <div class="tt-day-col">
+            ${byDay[d].length === 0 ? '<div class="tt-empty">-</div>' :
+              byDay[d].map(t => `
+                <div class="tt-slot">
+                  <div class="tt-subject">${t.subject_name}</div>
+                  <div class="tt-time">${t.start_time} - ${t.end_time}</div>
+                  <div class="tt-room">${t.room||''}</div>
+                  <div class="tt-teacher">${t.teacher_name||''}</div>
+                  ${ROLE !== 'student' ? `<button type="button" class="btn btn-xs btn-danger" onclick="deleteSchedule(${t.id})">✕</button>` : ''}
+                </div>`).join('')}
+          </div>`).join('')}
+      </div>`;
+  }
+
+  function openModal() {
+    document.getElementById('ttForm').reset();
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  }
+  function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+
+  document.getElementById('ttForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const confirmed = await requestSaveConfirmation({
+      title: 'Save Schedule',
+      message: 'Do you want to save this schedule?'
+    });
+    if (!confirmed) return;
+    const payload = {
+      subject_id: document.getElementById('fSubject').value,
+      day_of_week: document.getElementById('fDay').value,
+      start_time: document.getElementById('fStart').value,
+      end_time: document.getElementById('fEnd').value,
+      room: document.getElementById('fRoom').value
+    };
+    const res = await API.post('/api/timetable', payload);
+    if (res.message) { closeModal(); loadTimetable(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Error', 'error');
+  });
+
+  async function deleteSchedule(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Remove Schedule',
+      message: 'Do you want to remove this schedule?',
+      confirmText: 'Yes',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/timetable?id=' + id);
+    if (res.message) { loadTimetable(); showToast(res.message, 'success'); }
+  }
+</script>
+</body>
+</html>
