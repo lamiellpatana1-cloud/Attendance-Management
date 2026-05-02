@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subjects - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/attendease-logo-icon.png">
+<meta name="theme-color" content="#05110a">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon"></div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+    </div>
+  </aside>
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title" id="subjectsTitle">Manage Subjects</h2>
+      <div class="top-bar-right">
+        <input type="text" id="searchInput" placeholder="Search subjects..." class="search-input" oninput="filterTable()">
+      <button type="button" class="btn btn-secondary" id="subjectsArchiveToggleBtn" onclick="toggleArchiveView()">View Archived</button>
+      <button type="button" class="btn btn-primary" id="subjectsAddBtn" onclick="openModal()">+ Add Subject</button>
+      </div>
+    </header>
+    <div class="content-area">
+      <div class="table-card">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Teacher</th>
+              <th>Course</th>
+              <th>Year</th>
+              <th>Section</th>
+              <th>Units</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="subjectsBody"><tr><td colspan="8" class="loading-row">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Subject</h3>
+      <button type="button" class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="subjectForm">
+      <input type="hidden" id="subjectId">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Subject Code *</label>
+          <input type="text" id="fCode" required maxlength="20" placeholder="e.g. MATH101">
+        </div>
+        <div class="form-group">
+          <label>Subject Name *</label>
+          <input type="text" id="fName" required maxlength="60" placeholder="e.g. Calculus">
+        </div>
+      </div>
+
+      <div class="form-row" id="teacherSelectRow">
+        <div class="form-group" id="teacherSelectGroup">
+          <label>Assigned Teacher *</label>
+          <select id="fTeacherId" required><option value="">Select teacher</option></select>
+        </div>
+        <div class="form-group hidden" id="teacherDisplayGroup">
+          <label>Assigned Teacher</label>
+          <input type="text" id="fTeacherDisplay" disabled>
+        </div>
+        <div class="form-group">
+          <label>Units *</label>
+          <input type="number" id="fUnits" min="1" max="6" value="3" required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Course *</label>
+          <input type="text" id="fCourse" required placeholder="e.g. BSIT">
+        </div>
+        <div class="form-group">
+          <label>Year Level *</label>
+          <select id="fYear" required>
+            <option value="">Select year</option>
+            <option value="1">1st Year</option>
+            <option value="2">2nd Year</option>
+            <option value="3">3rd Year</option>
+            <option value="4">4th Year</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Section *</label>
+          <input type="text" id="fSection" required placeholder="e.g. A">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+  requireRole('admin', 'teacher');
+  renderNav();
+
+  const ROLE = localStorage.getItem('role');
+  const PROFILE_ID = currentProfileId();
+  const CURRENT_NAME = localStorage.getItem('name') || 'Current Teacher';
+  let showArchived = false;
+
+  bindAutoNameCase(['fName']);
+
+  if (ROLE === 'teacher') {
+    document.getElementById('subjectsTitle').textContent = 'My Subjects';
+    document.getElementById('teacherSelectGroup').classList.add('hidden');
+    document.getElementById('teacherDisplayGroup').classList.remove('hidden');
+    applyTeacherFieldState();
+  } else {
+    loadTeacherOptions();
+  }
+
+  updateSubjectsViewState();
+  loadSubjects();
+
+  function formatYearLabel(value) {
+    if (value === '1') return '1st Year';
+    if (value === '2') return '2nd Year';
+    if (value === '3') return '3rd Year';
+    if (value === '4') return '4th Year';
+    return value || '-';
+  }
+
+  async function loadTeacherOptions() {
+    const teachers = await API.get('/api/teachers');
+    const select = document.getElementById('fTeacherId');
+    if (!teachers) return;
+    select.innerHTML = '<option value="">Select teacher</option>' + teachers.map(teacher =>
+      `<option value="${teacher.id}">${teacher.full_name}</option>`
+    ).join('');
+    if (select.options.length > 1) {
+      select.selectedIndex = 1;
+    }
+  }
+
+  function applyTeacherFieldState(data = null) {
+    const teacherIdField = document.getElementById('fTeacherId');
+    const teacherDisplayField = document.getElementById('fTeacherDisplay');
+    if (ROLE === 'teacher') {
+      teacherIdField.value = PROFILE_ID;
+      teacherIdField.required = false;
+      teacherIdField.disabled = true;
+      teacherDisplayField.value = (data && data.teacher_name) || CURRENT_NAME;
+      return;
+    }
+
+    teacherIdField.disabled = false;
+    teacherIdField.required = true;
+    teacherDisplayField.value = data && data.teacher_name ? data.teacher_name : '';
+    if (data && data.teacher_id) {
+      teacherIdField.value = data.teacher_id;
+    } else if (!teacherIdField.value && teacherIdField.options.length > 1) {
+      teacherIdField.selectedIndex = 1;
+    }
+  }
+
+  async function loadSubjects() {
+    const data = await API.get('/api/subjects' + (showArchived ? '?archived=1' : ''));
+    const tbody = document.getElementById('subjectsBody');
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-row">${showArchived ? 'No archived subjects found' : 'No subjects found'}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(subject => `
+      <tr>
+        <td>${subject.code}</td>
+        <td>${subject.name}</td>
+        <td>${subject.teacher_name || '-'}</td>
+        <td>${subject.course || '-'}</td>
+        <td>${formatYearLabel(String(subject.year_level || ''))}</td>
+        <td>${subject.section || '-'}</td>
+        <td>${subject.units || '-'}</td>
+        <td class="actions">
+          ${showArchived
+            ? `<button type="button" class="btn btn-sm btn-success" onclick="restoreSubject(${subject.id})">Restore</button>`
+            : `<button type="button" class="btn btn-sm btn-secondary" onclick="editSubject('${encodeURIComponent(JSON.stringify(subject))}')">Edit</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="deleteSubject(${subject.id})">Archive</button>`}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function updateSubjectsViewState() {
+    document.getElementById('subjectsTitle').textContent = showArchived ? (ROLE === 'teacher' ? 'Archived My Subjects' : 'Archived Subjects') : (ROLE === 'teacher' ? 'My Subjects' : 'Manage Subjects');
+    document.getElementById('subjectsArchiveToggleBtn').textContent = showArchived ? 'Back to Active' : 'View Archived';
+    document.getElementById('subjectsAddBtn').classList.toggle('hidden', showArchived);
+  }
+
+  function toggleArchiveView() {
+    showArchived = !showArchived;
+    updateSubjectsViewState();
+    loadSubjects();
+  }
+
+  function openModal(data = null) {
+    document.getElementById('subjectForm').reset();
+    document.getElementById('modalTitle').textContent = data ? 'Edit Subject' : 'Add Subject';
+    document.getElementById('subjectId').value = data ? data.id : '';
+    document.getElementById('fCode').value = data ? data.code : '';
+    document.getElementById('fName').value = data ? data.name : '';
+    document.getElementById('fUnits').value = data ? data.units : '3';
+    document.getElementById('fCourse').value = data ? (data.course || '') : '';
+    document.getElementById('fYear').value = data ? (data.year_level || '') : '';
+    document.getElementById('fSection').value = data ? (data.section || '') : '';
+    applyTeacherFieldState(data);
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  }
+
+  function editSubject(encoded) { openModal(JSON.parse(decodeURIComponent(encoded))); }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.add('hidden');
+  }
+
+  document.getElementById('subjectForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('subjectId').value;
+    const confirmed = await requestSaveConfirmation({
+      title: id ? 'Update Subject' : 'Save Subject',
+      message: id ? 'Do you want to update this subject?' : 'Do you want to save this subject?'
+    });
+    if (!confirmed) return;
+    const payload = {
+      id,
+      code: document.getElementById('fCode').value.trim().toUpperCase(),
+      name: document.getElementById('fName').value.trim(),
+      teacher_id: ROLE === 'teacher' ? PROFILE_ID : document.getElementById('fTeacherId').value,
+      units: document.getElementById('fUnits').value,
+      course: document.getElementById('fCourse').value.trim().toUpperCase(),
+      year_level: document.getElementById('fYear').value,
+      section: document.getElementById('fSection').value.trim().toUpperCase()
+    };
+
+    const res = id
+      ? await API.put('/api/subjects', payload)
+      : await API.post('/api/subjects', payload);
+
+    if (res && res.message) {
+      closeModal();
+      loadSubjects();
+      showToast(res.message, 'success');
+    } else {
+      showToast((res && res.error) || 'Unable to save subject', 'error');
+    }
+  });
+
+  async function deleteSubject(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Archive Subject',
+      message: 'Do you want to archive this subject?',
+      confirmText: 'Yes',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/subjects?id=' + id);
+    if (res && res.message) {
+      loadSubjects();
+      showToast(res.message, 'success');
+    } else {
+      showToast((res && res.error) || 'Unable to delete subject', 'error');
+    }
+  }
+
+  async function restoreSubject(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Restore Subject',
+      message: 'Do you want to restore this subject?',
+      confirmText: 'Yes',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.put('/api/subjects', { id, action: 'restore' });
+    if (res && res.message) {
+      loadSubjects();
+      showToast(res.message, 'success');
+    } else {
+      showToast((res && res.error) || 'Unable to restore subject', 'error');
+    }
+  }
+
+  function filterTable() {
+    const query = document.getElementById('searchInput').value.toLowerCase();
+    document.querySelectorAll('#subjectsBody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+    });
+  }
+</script>
+</body>
+</html>

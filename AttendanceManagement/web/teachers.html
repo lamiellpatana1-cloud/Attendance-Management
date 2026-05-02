@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teachers - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/attendease-logo-icon.png">
+<meta name="theme-color" content="#05110a">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon">🎓</div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+      
+    </div>
+  </aside>
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title" id="teachersPageTitle">Manage Teachers</h2>
+      <div class="top-bar-right">
+        <input type="text" id="searchInput" placeholder="Search teachers..." class="search-input" oninput="filterTable()">
+        <button type="button" class="btn btn-secondary" id="teachersArchiveToggleBtn" onclick="toggleArchiveView()">View Archived</button>
+        <button type="button" class="btn btn-primary" id="teachersAddBtn" onclick="openModal()">+ Add Teacher</button>
+      </div>
+    </header>
+    <div class="content-area">
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Subject</th><th>Phone</th><th>Actions</th></tr></thead>
+          <tbody id="teachersBody"><tr><td colspan="6" class="loading-row">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Teacher</h3>
+      <button type="button" class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="teacherForm">
+      <input type="hidden" id="teacherId">
+      <div class="form-row">
+        <div class="form-group"><label>Full Name *</label><input type="text" id="fFullName" required></div>
+        <div class="form-group"><label>Email *</label><input type="email" id="fEmail" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Phone</label><input type="text" id="fPhone"></div>
+        <div class="form-group"><label>Department</label><input type="text" id="fDept"></div>
+        <div class="form-group"><label>Subject</label><input type="text" id="fSubject"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+  requireRole('admin');
+  renderNav();
+  let showArchived = false;
+  updateTeachersViewState();
+  loadTeachers();
+
+  async function loadTeachers() {
+    const data = await API.get('/api/teachers' + (showArchived ? '?archived=1' : ''));
+    const tbody = document.getElementById('teachersBody');
+    if (!data || data.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${showArchived ? 'No archived teachers found' : 'No teachers found'}</td></tr>`; return; }
+    tbody.innerHTML = data.map(t => `
+      <tr>
+        <td>${t.full_name}</td><td>${t.email}</td><td>${t.department||'-'}</td>
+        <td>${t.subject||'-'}</td><td>${t.phone||'-'}</td>
+        <td class="actions">
+          ${showArchived
+            ? `<button type="button" class="btn btn-sm btn-success" onclick="restoreTeacher(${t.id})">Restore</button>`
+            : `<button type="button" class="btn btn-sm btn-secondary" onclick="editTeacher('${encodeURIComponent(JSON.stringify(t))}')">Edit</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="deleteTeacher(${t.id})">Archive</button>`}
+        </td>
+      </tr>`).join('');
+  }
+
+  function updateTeachersViewState() {
+    document.getElementById('teachersPageTitle').textContent = showArchived ? 'Archived Teachers' : 'Manage Teachers';
+    document.getElementById('teachersArchiveToggleBtn').textContent = showArchived ? 'Back to Active' : 'View Archived';
+    document.getElementById('teachersAddBtn').classList.toggle('hidden', showArchived);
+  }
+
+  function toggleArchiveView() {
+    showArchived = !showArchived;
+    updateTeachersViewState();
+    loadTeachers();
+  }
+
+  function openModal(data=null) {
+    document.getElementById('teacherForm').reset();
+    document.getElementById('modalTitle').textContent = data ? 'Edit Teacher' : 'Add Teacher';
+    document.getElementById('teacherId').value  = data ? data.id : '';
+    document.getElementById('fFullName').value  = data ? data.full_name : '';
+    document.getElementById('fEmail').value     = data ? data.email : '';
+    document.getElementById('fPhone').value     = data ? data.phone||'' : '';
+    document.getElementById('fDept').value      = data ? data.department||'' : '';
+    document.getElementById('fSubject').value   = data ? data.subject||'' : '';
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  }
+  function editTeacher(encoded) { openModal(JSON.parse(decodeURIComponent(encoded))); }
+  function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+  bindAutoNameCase(['fFullName']);
+
+  document.getElementById('teacherForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('teacherId').value;
+    const email = normalizeEmailValue(document.getElementById('fEmail').value);
+    const emailError = getEmailError(email);
+    if (emailError) { showToast(emailError, 'error'); return; }
+    const confirmed = await requestSaveConfirmation({
+      title: id ? 'Update Teacher' : 'Save Teacher',
+      message: id ? 'Do you want to update this teacher?' : 'Do you want to save this teacher?'
+    });
+    if (!confirmed) return;
+    const payload = { id, full_name: document.getElementById('fFullName').value,
+      email: email, phone: document.getElementById('fPhone').value,
+      department: document.getElementById('fDept').value, subject: document.getElementById('fSubject').value };
+    const res = id ? await API.put('/api/teachers', payload) : await API.post('/api/teachers', payload);
+    if (res.message) { closeModal(); loadTeachers(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Error', 'error');
+  });
+
+  async function deleteTeacher(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Archive Teacher',
+      message: 'Do you want to archive this teacher?',
+      confirmText: 'Yes',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/teachers?id=' + id);
+    if (res.message) { loadTeachers(); showToast(res.message, 'success'); }
+  }
+
+  async function restoreTeacher(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Restore Teacher',
+      message: 'Do you want to restore this teacher?',
+      confirmText: 'Yes',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.put('/api/teachers', { id, action: 'restore' });
+    if (res.message) { loadTeachers(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Restore failed', 'error');
+  }
+
+  function filterTable() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    document.querySelectorAll('#teachersBody tr').forEach(r => r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none');
+  }
+</script>
+</body>
+</html>

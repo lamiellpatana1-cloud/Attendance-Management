@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attendance - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/attendease-logo-icon.png">
+<meta name="theme-color" content="#05110a">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon">🎓</div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title">Smart Attendance</h2>
+    </header>
+
+    <div class="content-area">
+      <div class="tabs">
+        <button type="button" class="tab active" id="tab-btn-manual" onclick="switchTab('manual', this)">Manual</button>
+        <button type="button" class="tab" id="tab-btn-qr" onclick="switchTab('qr', this)">QR Scan</button>
+        <button type="button" class="tab" id="tab-btn-geo" onclick="switchTab('geo', this)">Geo-Location</button>
+        <button type="button" class="tab" id="tab-btn-records" onclick="switchTab('records', this)">Records</button>
+        <button type="button" class="tab hidden" id="tab-btn-myqr" onclick="switchTab('myqr', this)">My QR Code</button>
+      </div>
+
+      <div id="tab-manual" class="tab-content active">
+        <div class="filter-bar">
+          <div class="form-group inline"><label>Date</label><input type="date" id="attDate"></div>
+          <div class="form-group inline">
+            <label>Subject</label>
+            <select id="attSubject"><option value="">Select subject</option></select>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="loadManualList()">Load Students</button>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead><tr><th>Student ID</th><th>Name</th><th>Status</th><th>Time In</th><th>Remarks</th><th>Save</th></tr></thead>
+            <tbody id="manualBody"><tr><td colspan="6" class="empty-row">Select a date and subject to load students.</td></tr></tbody>
+          </table>
+        </div>
+        <div class="action-bar">
+          <button type="button" class="btn btn-success" onclick="markAll('present')">Mark All Present</button>
+          <button type="button" class="btn btn-danger" onclick="markAll('absent')">Mark All Absent</button>
+          <button type="button" class="btn btn-primary" onclick="saveAllAttendance()">Save All</button>
+        </div>
+      </div>
+
+      <div id="tab-qr" class="tab-content hidden">
+        <div class="filter-bar">
+          <div class="form-group inline"><label>Date</label><input type="date" id="qrDate"></div>
+          <div class="form-group inline">
+            <label>Subject</label>
+            <select id="qrSubject"><option value="">Select subject</option></select>
+          </div>
+        </div>
+        <div class="qr-scanner-area">
+          <div class="qr-box">
+            <div class="qr-frame" id="qrFrame">
+              <video id="qrVideo" autoplay playsinline></video>
+              <div class="qr-overlay"></div>
+            </div>
+            <div class="qr-controls">
+              <button type="button" class="btn btn-primary" onclick="startQRScan()">Start Camera</button>
+              <button type="button" class="btn btn-secondary" onclick="stopQRScan()">Stop</button>
+            </div>
+            <p class="qr-hint">Point the camera at the student's QR code. Every successful scan is saved immediately with the current date and time.</p>
+          </div>
+          <div class="qr-log">
+            <h4>Scan Log</h4>
+            <div id="qrLog"><p class="empty-msg">No scans yet</p></div>
+          </div>
+        </div>
+        <div class="qr-manual-input">
+          <h4>Manual QR Input</h4>
+          <div class="form-row">
+            <input type="text" id="qrManualInput" placeholder="Paste QR data here...">
+            <button type="button" class="btn btn-primary" onclick="processQRManual()">Process</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-geo" class="tab-content hidden">
+        <div class="geo-area">
+          <div class="geo-setup">
+            <h4>Allowed Location</h4>
+            <div class="form-row geo-meta-row">
+              <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="geoDate">
+              </div>
+              <div class="form-group">
+                <label>Subject</label>
+                <select id="geoSubject"><option value="">Select subject</option></select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Allowed Latitude</label><input type="number" id="geoLat" step="0.000001" placeholder="e.g. 14.599512"></div>
+              <div class="form-group"><label>Allowed Longitude</label><input type="number" id="geoLng" step="0.000001" placeholder="e.g. 120.984222"></div>
+              <div class="form-group"><label>Radius (meters)</label><input type="number" id="geoRadius" value="100"></div>
+            </div>
+            <button type="button" class="btn btn-secondary geo-locate-btn" onclick="useMyLocation()">Use My Current Location</button>
+          </div>
+          <div class="geo-checkin">
+            <h4>Geo Check-in</h4>
+            <p id="geoRoleNote" class="geo-note hidden"></p>
+            <button type="button" class="btn btn-primary btn-lg" onclick="geoCheckIn()">Check In with Location</button>
+            <div id="geoStatus" class="geo-status"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-records" class="tab-content hidden">
+        <div class="filter-bar">
+          <div class="form-group inline"><label>Date</label><input type="date" id="recDate"></div>
+          <button type="button" class="btn btn-primary" onclick="loadRecords()">Filter</button>
+          <button type="button" class="btn btn-secondary" onclick="loadRecords(true)">Show All</button>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Student</th><th>Subject</th><th>Status</th><th>Method</th><th>Time In</th><th id="actionsHeader">Actions</th></tr></thead>
+            <tbody id="recordsBody"><tr><td colspan="7" class="loading-row">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-myqr" class="tab-content hidden">
+        <div class="my-qr-layout">
+          <div class="my-qr-card">
+            <h3 class="my-qr-title">Your Attendance QR Code</h3>
+            <p class="my-qr-copy">Show this to your teacher to mark your attendance.</p>
+            <div id="myQRContainer" class="my-qr-container"></div>
+            <div id="myQRName" class="my-qr-name"></div>
+            <div id="myQRId" class="my-qr-id"></div>
+            <button type="button" class="btn btn-primary" onclick="downloadQR()">Download QR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script src="js/qr.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  requireAuth();
+  renderNav();
+
+  const ROLE = localStorage.getItem('role');
+  const PROFILE_ID = currentProfileId();
+  let manualStudents = [];
+
+  function formatLocalDate(date = new Date()) {
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return localDate.toISOString().split('T')[0];
+  }
+
+  function formatLocalTime(date = new Date()) {
+    return date.toTimeString().split(' ')[0];
+  }
+
+  document.getElementById('attDate').value = formatLocalDate();
+  document.getElementById('qrDate').value = formatLocalDate();
+  document.getElementById('recDate').value = formatLocalDate();
+  document.getElementById('geoDate').value = formatLocalDate();
+
+  if (ROLE === 'student') {
+    document.getElementById('tab-btn-manual').classList.add('hidden');
+    document.getElementById('tab-btn-qr').classList.add('hidden');
+    document.getElementById('tab-btn-myqr').classList.remove('hidden');
+    switchTab('records', document.getElementById('tab-btn-records'));
+    loadMyQR();
+  }
+
+  loadSubjects();
+  loadRecords();
+
+  async function loadSubjects() {
+    const data = await API.get('/api/subjects');
+    const manualSelect = document.getElementById('attSubject');
+    const qrSelect = document.getElementById('qrSubject');
+    const geoSelect = document.getElementById('geoSubject');
+    if (!data) return;
+
+    data.forEach(item => {
+      const label = `${item.name} (${item.code})`;
+      manualSelect.innerHTML += `<option value="${item.id}">${label}</option>`;
+      if (qrSelect) qrSelect.innerHTML += `<option value="${item.id}">${label}</option>`;
+      if (qrSelect && !qrSelect.value) qrSelect.value = item.id;
+      if (geoSelect) geoSelect.innerHTML += `<option value="${item.id}">${label}</option>`;
+      if (geoSelect && !geoSelect.value) geoSelect.value = item.id;
+    });
+  }
+
+  function setGeoStatus(type, message) {
+    const status = document.getElementById('geoStatus');
+    if (!status) return;
+    if (!message) {
+      status.innerHTML = '';
+      return;
+    }
+    status.innerHTML = `<div class="geo-status-card ${type}">${message}</div>`;
+  }
+
+  function syncGeoRoleState() {
+    const note = document.getElementById('geoRoleNote');
+    const button = document.querySelector('.geo-checkin .btn-lg');
+    if (!note || !button) return;
+
+    if (ROLE === 'student') {
+      note.classList.add('hidden');
+      note.textContent = '';
+      button.disabled = false;
+      button.title = '';
+      return;
+    }
+
+    note.classList.remove('hidden');
+    note.textContent = 'Geo check-in is available only on student accounts. Use a student login to submit attendance by location.';
+    button.disabled = true;
+    button.title = 'Geo check-in is available for students only';
+    setGeoStatus('info', 'You can set the allowed location here, but geo-location attendance can only be submitted using a student account.');
+  }
+
+  async function loadManualList() {
+    const date = document.getElementById('attDate').value;
+    const subjectId = document.getElementById('attSubject').value;
+    if (!subjectId) {
+      showToast('Select a subject first', 'error');
+      return;
+    }
+    const students = await API.get('/api/students?subject_id=' + encodeURIComponent(subjectId));
+    const existing = await API.get('/api/attendance?date=' + encodeURIComponent(date));
+    manualStudents = students || [];
+
+    const tbody = document.getElementById('manualBody');
+    if (!students || students.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">No students found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = students.map(student => {
+      const attendance = existing ? existing.find(row => row.student_profile_id == student.id && (!subjectId || row.subject_id == subjectId)) : null;
+      const status = attendance ? attendance.status : 'absent';
+      const timeValue = attendance && attendance.status !== 'absent' && attendance.time_in
+        ? attendance.time_in.substring(0, 5)
+        : '';
+      return `<tr>
+        <td>${student.student_id}</td>
+        <td>${student.full_name}</td>
+        <td>
+          <select class="status-sel" id="status-${student.id}" onchange="handleManualStatusChange(${student.id})">
+            <option value="present" ${status === 'present' ? 'selected' : ''}>Present</option>
+            <option value="absent" ${status === 'absent' ? 'selected' : ''}>Absent</option>
+            <option value="late" ${status === 'late' ? 'selected' : ''}>Late</option>
+            <option value="excused" ${status === 'excused' ? 'selected' : ''}>Excused</option>
+          </select>
+        </td>
+        <td><input class="table-time-input" type="time" id="timein-${student.id}" value="${timeValue}" placeholder="Auto on save" ${status === 'absent' ? 'disabled' : ''}></td>
+        <td><input class="table-text-input" type="text" id="remarks-${student.id}" placeholder="Remarks" value="${attendance && attendance.remarks ? attendance.remarks : ''}"></td>
+        <td><button type="button" class="btn btn-sm btn-primary" onclick="saveOne(${student.id})">Save</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function markAll(status) {
+    manualStudents.forEach(student => {
+      const select = document.getElementById('status-' + student.id);
+      if (select) {
+        select.value = status;
+        handleManualStatusChange(student.id);
+      }
+    });
+  }
+
+  function handleManualStatusChange(studentId) {
+    const select = document.getElementById('status-' + studentId);
+    const timeInput = document.getElementById('timein-' + studentId);
+    if (!select || !timeInput) return;
+
+    const value = select.value;
+    const needsTime = value === 'present' || value === 'late' || value === 'excused';
+    const currentValue = (timeInput.value || '').trim();
+
+    timeInput.disabled = !needsTime;
+
+    if (!needsTime) {
+      timeInput.value = '';
+      timeInput.dataset.autofilled = 'false';
+      return;
+    }
+
+    if (needsTime && !currentValue) {
+      timeInput.value = formatLocalTime().slice(0, 5);
+      timeInput.dataset.autofilled = 'true';
+      return;
+    }
+
+    if (currentValue) {
+      timeInput.dataset.autofilled = 'false';
+    }
+  }
+
+  async function saveOne(studentId, options = {}) {
+    handleManualStatusChange(studentId);
+    const selectedStatus = document.getElementById('status-' + studentId).value;
+    const timeInput = document.getElementById('timein-' + studentId).value;
+    if (!options.skipConfirm) {
+      const confirmed = await requestSaveConfirmation({
+        title: 'Save Attendance',
+        message: 'Do you want to save this attendance record?'
+      });
+      if (!confirmed) return false;
+    }
+    const payload = {
+      student_id: studentId,
+      subject_id: document.getElementById('attSubject').value,
+      date: document.getElementById('attDate').value,
+      time_in: selectedStatus === 'absent' ? '' : timeInput,
+      status: selectedStatus,
+      remarks: document.getElementById('remarks-' + studentId).value,
+      method: 'manual'
+    };
+    const res = await API.post('/api/attendance', payload);
+    if (res.message) {
+      if (!options.silent) showToast('Attendance saved', 'success');
+      return true;
+    }
+    showToast(res.error || 'Failed to save', 'error');
+    return false;
+  }
+
+  async function saveAllAttendance() {
+    const confirmed = await requestSaveConfirmation({
+      title: 'Save All Attendance',
+      message: 'Do you want to save all attendance records shown here?'
+    });
+    if (!confirmed) return;
+    let successCount = 0;
+    for (const student of manualStudents) {
+      const saved = await saveOne(student.id, { skipConfirm: true, silent: true });
+      if (saved) successCount++;
+    }
+    if (successCount === manualStudents.length) {
+      showToast('All attendance saved', 'success');
+    } else {
+      showToast(`${successCount} of ${manualStudents.length} attendance records saved`, successCount ? 'success' : 'error');
+    }
+  }
+
+  async function loadRecords(all = false) {
+    const date = all ? '' : document.getElementById('recDate').value;
+    let url = '/api/attendance';
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (ROLE === 'student') params.set('student_id', PROFILE_ID);
+    if ([...params.keys()].length) url += '?' + params.toString();
+
+    const data = await API.get(url);
+    const tbody = document.getElementById('recordsBody');
+    if (ROLE === 'student') document.getElementById('actionsHeader').style.display = 'none';
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-row">No records found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(item => `
+      <tr>
+        <td>${item.date}</td>
+        <td>${ROLE === 'student' ? (item.full_name || '-') : `${item.full_name} (${item.student_id})`}</td>
+        <td>${item.subject_name}</td>
+        <td><span class="badge ${item.status}">${item.status}</span></td>
+        <td>${item.method}</td>
+        <td>${item.time_in || '-'}</td>
+        <td>${ROLE === 'student' ? '' : `<button type="button" class="btn btn-sm btn-secondary" onclick="editRecord('${encodeURIComponent(JSON.stringify(item))}')">Edit</button>`}</td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadMyQR() {
+    const data = await API.get('/api/qr');
+    if (!data || !data.qr_data) {
+      showToast('Failed to load QR code', 'error');
+      return;
+    }
+    document.getElementById('myQRName').textContent = data.name;
+    document.getElementById('myQRId').textContent = 'ID: ' + data.student_id;
+
+    const container = document.getElementById('myQRContainer');
+    container.innerHTML = '';
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(container, {
+        text: data.student_id || data.qr_data,
+        width: 240,
+        height: 240,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+  }
+
+  function downloadQR() {
+    const canvas = document.querySelector('#myQRContainer canvas');
+    if (!canvas) return;
+    const a = document.createElement('a');
+    a.download = 'my-qr-code.png';
+    a.href = canvas.toDataURL();
+    a.click();
+  }
+
+  async function editRecord(encoded) {
+    const item = JSON.parse(decodeURIComponent(encoded));
+    const status = prompt('New status (present/absent/late/excused):', item.status);
+    if (!status) return;
+    const res = await API.put('/api/attendance', { id: item.id, status, remarks: item.remarks || '' });
+    if (res.message) {
+      loadRecords();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.error || 'Update failed', 'error');
+    }
+  }
+
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+    document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    btn.classList.add('active');
+  }
+
+  function useMyLocation() {
+    setGeoStatus('info', 'Requesting your current location...');
+    navigator.geolocation.getCurrentPosition(position => {
+      document.getElementById('geoLat').value = Number(position.coords.latitude).toFixed(6);
+      document.getElementById('geoLng').value = Number(position.coords.longitude).toFixed(6);
+      setGeoStatus('success', `Allowed location captured: ${Number(position.coords.latitude).toFixed(6)}, ${Number(position.coords.longitude).toFixed(6)}`);
+      showToast('Location captured', 'success');
+    }, (error) => {
+      const message = error && error.code === 1
+        ? 'Location access was blocked. Allow location permission in the browser and try again.'
+        : 'Unable to get your current location.';
+      setGeoStatus('error', message);
+      showToast(message, 'error');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  }
+
+  function geoCheckIn() {
+    const allowedLat = parseFloat(document.getElementById('geoLat').value);
+    const allowedLng = parseFloat(document.getElementById('geoLng').value);
+    const radius = parseFloat(document.getElementById('geoRadius').value) || 100;
+    const subjectId = document.getElementById('geoSubject').value;
+    const attendanceDate = document.getElementById('geoDate').value || formatLocalDate();
+
+    if (ROLE !== 'student') {
+      setGeoStatus('info', 'Geo check-in is available on student accounts only. Switch to a student login to submit attendance by location.');
+      return;
+    }
+
+    if (!Number.isFinite(allowedLat) || !Number.isFinite(allowedLng)) {
+      setGeoStatus('error', 'Set a valid allowed latitude and longitude first.');
+      showToast('Set the allowed location first', 'error');
+      return;
+    }
+
+    if (!subjectId) {
+      setGeoStatus('error', 'Select a subject before checking in.');
+      showToast('Select a subject first', 'error');
+      return;
+    }
+
+    setGeoStatus('info', 'Checking your location and validating the geo-fence...');
+
+    navigator.geolocation.getCurrentPosition(async position => {
+      const res = await API.post('/api/attendance', {
+        student_id: PROFILE_ID,
+        subject_id: subjectId,
+        date: attendanceDate,
+        time_in: formatLocalTime(),
+        status: 'present',
+        method: 'geo',
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        allowed_latitude: allowedLat,
+        allowed_longitude: allowedLng,
+        radius_meters: radius
+      });
+
+      if (res.message) {
+        setGeoStatus('success', 'Location verified. Attendance marked successfully.');
+        showToast('Attendance marked via geo-location', 'success');
+        loadRecords();
+      } else {
+        setGeoStatus('error', res.error || 'Geo check-in failed');
+      }
+    }, (error) => {
+      const message = error && error.code === 1
+        ? 'Location access was denied. Allow browser location permission and try again.'
+        : 'Unable to get your live location for check-in.';
+      setGeoStatus('error', message);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  }
+
+  syncGeoRoleState();
+</script>
+</body>
+</html>
