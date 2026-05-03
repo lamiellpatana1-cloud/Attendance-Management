@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Students - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon">🎓</div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+      
+    </div>
+  </aside>
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title" id="studentsPageTitle">Manage Students</h2>
+      <div class="top-bar-right">
+        <input type="text" id="searchInput" placeholder="Search students..." class="search-input" oninput="filterTable()">
+        <select id="courseFilter" class="search-input" onchange="filterTable()"><option value="">All Courses</option></select>
+        <select id="yearFilter" class="search-input" onchange="filterTable()"><option value="">All Years</option></select>
+        <button type="button" class="btn btn-secondary" id="studentsArchiveToggleBtn" onclick="toggleArchiveView()">View Archived</button>
+        <button type="button" class="btn btn-primary" id="studentsAddBtn" onclick="openModal()">+ Add Student</button>
+      </div>
+    </header>
+    <div class="content-area">
+      <div class="table-card">
+        <table class="data-table" id="studentsTable">
+          <thead>
+            <tr><th>Student ID</th><th>Full Name</th><th>Course</th><th>Year</th><th>Section</th><th>Email</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="studentsBody"><tr><td colspan="7" class="loading-row">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal student-profile-modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Student</h3>
+      <button type="button" class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="studentForm">
+      <input type="hidden" id="studentId">
+      <div class="form-row">
+        <div class="form-group"><label>Full Name</label><input type="text" id="fFullName" required></div>
+        <div class="form-group"><label>Email</label><input type="email" id="fEmail" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Contact No.</label><input type="text" id="fPhone"></div>
+        <div class="form-group"><label>Date of Birth</label><input type="date" id="fBirthDate" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Province</label><input type="text" id="fProvince" value="LAGUNA" readonly required></div>
+        <div class="form-group">
+          <label>Municipality / City</label>
+          <select id="fMunicipality" required><option value="">Select municipality or city</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Barangay</label>
+          <select id="fBarangay" required disabled><option value="">Select barangay</option></select>
+        </div>
+        <div class="form-group"><label>Role</label><input type="text" id="fRoleDisplay" value="Student" readonly></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Student ID</label><input type="text" id="fStudentId" placeholder="Select year level" readonly required></div>
+        <div class="form-group">
+          <label>Year Level</label>
+          <select id="fYear" required>
+            <option value="">Select year</option>
+            <option value="1">1st Year</option>
+            <option value="2">2nd Year</option>
+            <option value="3">3rd Year</option>
+            <option value="4">4th Year</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Course</label><input type="text" id="fCourse" required></div>
+        <div class="form-group"><label>Section</label><input type="text" id="fSection" required></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/laguna-addresses.js"></script>
+<script src="js/app.js"></script>
+<script>
+  requireRole('admin', 'teacher');
+  renderNav();
+  let showArchived = false;
+  let studentsData = [];
+  const lagunaLocationData = window.LAGUNA_LOCATION_DATA || { province: 'LAGUNA', municipalities: [] };
+  initializeStudentLocationFields();
+  setStudentBirthDateBounds();
+  updateStudentsViewState();
+  loadStudents();
+
+  async function loadStudents() {
+    const data = await API.get('/api/students' + (showArchived ? '?archived=1' : ''));
+    studentsData = data || [];
+    populateStudentFilters(studentsData);
+    filterTable();
+  }
+
+  function renderStudents(data) {
+    const tbody = document.getElementById('studentsBody');
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-row">${showArchived ? 'No archived students found' : 'No students found'}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(s => `
+      <tr>
+        <td>${s.student_id}</td>
+        <td>${s.full_name}</td>
+        <td>${s.course || '-'}</td>
+        <td>${s.year_level || '-'}</td>
+        <td>${s.section || '-'}</td>
+        <td>${s.email || '-'}</td>
+        <td class="actions">
+          ${showArchived
+            ? `<button type="button" class="btn btn-sm btn-success" onclick="restoreStudent(${s.id})">Restore</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="permanentlyDeleteStudent(${s.id})">Permanent Delete</button>`
+            : `<button type="button" class="btn btn-sm btn-secondary" onclick="editStudent('${encodeURIComponent(JSON.stringify(s))}')">Edit</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="deleteStudent(${s.id})">Archive</button>
+               <button type="button" class="btn btn-sm btn-teal" onclick="showQR(${s.id})">QR</button>`}
+        </td>
+      </tr>`).join('');
+  }
+
+  function populateStudentFilters(data) {
+    const courseFilter = document.getElementById('courseFilter');
+    const yearFilter = document.getElementById('yearFilter');
+    const currentCourse = courseFilter.value;
+    const currentYear = yearFilter.value;
+    const courses = [...new Set(data.map(s => s.course || '').filter(Boolean))].sort();
+    const years = [...new Set(data.map(s => String(s.year_level || '')).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+    courseFilter.innerHTML = '<option value="">All Courses</option>' + courses.map(course => `<option value="${course}">${course}</option>`).join('');
+    yearFilter.innerHTML = '<option value="">All Years</option>' + years.map(year => `<option value="${year}">Year ${year}</option>`).join('');
+    courseFilter.value = courses.includes(currentCourse) ? currentCourse : '';
+    yearFilter.value = years.includes(currentYear) ? currentYear : '';
+  }
+
+  function updateStudentsViewState() {
+    document.getElementById('studentsPageTitle').textContent = showArchived ? 'Archived Students' : 'Manage Students';
+    document.getElementById('studentsArchiveToggleBtn').textContent = showArchived ? 'Back to Active' : 'View Archived';
+    document.getElementById('studentsAddBtn').classList.toggle('hidden', showArchived);
+  }
+
+  function toggleArchiveView() {
+    showArchived = !showArchived;
+    updateStudentsViewState();
+    loadStudents();
+  }
+
+  function studentIdPrefix(yearLevel) {
+    switch (String(yearLevel || '')) {
+      case '4': return '221-';
+      case '3': return '231-';
+      case '2': return '241-';
+      case '1': return '251-';
+      default: return '';
+    }
+  }
+
+  function updateStudentIdPreview() {
+    const isEdit = !!document.getElementById('studentId').value;
+    if (isEdit) return;
+    const prefix = studentIdPrefix(document.getElementById('fYear').value);
+    document.getElementById('fStudentId').value = prefix ? `${prefix}XXXX` : '';
+  }
+
+  function getLagunaMunicipalities() {
+    return Array.isArray(lagunaLocationData.municipalities) ? lagunaLocationData.municipalities : [];
+  }
+
+  function repairLocationEncoding(value) {
+    const text = String(value || '').trim();
+    if (!text || !/[ÃƒÃ‚Ã¢]/.test(text)) return text;
+    try {
+      const percentEncoded = Array.from(text)
+        .map(ch => '%' + ch.charCodeAt(0).toString(16).padStart(2, '0'))
+        .join('');
+      return decodeURIComponent(percentEncoded);
+    } catch (error) {
+      return text
+        .replace(/ÃƒÂ±/g, 'ñ')
+        .replace(/Ãƒâ€˜|ÃƒÂ‘/g, 'Ñ')
+        .replace(/ÃƒÂ¡/g, 'á')
+        .replace(/ÃƒÂ©/g, 'é')
+        .replace(/ÃƒÂ­/g, 'í')
+        .replace(/ÃƒÂ³/g, 'ó')
+        .replace(/ÃƒÂº/g, 'ú');
+    }
+  }
+
+  function formatLocationLabel(value) {
+    let label = repairLocationEncoding(value);
+    if (!label) return '';
+    label = label.replace(/\s+\(Capital\)$/i, '');
+    if (/^CITY OF /i.test(label)) label = label.replace(/^CITY OF /i, '') + ' CITY';
+    return label
+      .toLowerCase()
+      .replace(/\b([a-z\u00c0-\u00ff])/g, match => match.toUpperCase())
+      .replace(/\bOf\b/g, 'of')
+      .replace(/\bAnd\b/g, 'and');
+  }
+
+  function formatBarangayLabel(value) {
+    return repairLocationEncoding(value).replace(/\s+/g, ' ').trim();
+  }
+
+  function populateStudentProvince() {
+    document.getElementById('fProvince').value = lagunaLocationData.province || 'LAGUNA';
+  }
+
+  function populateStudentMunicipalities(selectedCode = '', selectedName = '') {
+    const municipality = document.getElementById('fMunicipality');
+    municipality.innerHTML = '<option value="">Select municipality or city</option>';
+    const selectedLabel = formatLocationLabel(selectedName);
+    let matchedCode = '';
+
+    getLagunaMunicipalities().forEach(item => {
+      const label = formatLocationLabel(item.name);
+      const option = document.createElement('option');
+      option.value = item.code;
+      option.textContent = label;
+      municipality.appendChild(option);
+      if (!matchedCode && selectedLabel && label === selectedLabel) matchedCode = item.code;
+    });
+
+    municipality.value = selectedCode || matchedCode || '';
+  }
+
+  function getSelectedStudentMunicipalityData() {
+    const code = document.getElementById('fMunicipality').value;
+    return getLagunaMunicipalities().find(item => item.code === code) || null;
+  }
+
+  function getSelectedStudentMunicipalityLabel() {
+    const item = getSelectedStudentMunicipalityData();
+    return item ? formatLocationLabel(item.name) : '';
+  }
+
+  function populateStudentBarangays(municipalityCode = '', selectedBarangay = '') {
+    const barangay = document.getElementById('fBarangay');
+    const municipality = getLagunaMunicipalities().find(item => item.code === municipalityCode);
+    barangay.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = municipality ? 'Select barangay' : 'Select municipality or city first';
+    barangay.appendChild(placeholder);
+
+    if (!municipality) {
+      barangay.disabled = true;
+      barangay.value = '';
+      return;
+    }
+
+    municipality.barangays.forEach(name => {
+      const label = formatBarangayLabel(name);
+      const option = document.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      barangay.appendChild(option);
+    });
+
+    barangay.disabled = false;
+    barangay.value = formatBarangayLabel(selectedBarangay || '');
+  }
+
+  function initializeStudentLocationFields() {
+    populateStudentProvince();
+    populateStudentMunicipalities();
+    populateStudentBarangays('');
+    document.getElementById('fMunicipality').addEventListener('change', (event) => {
+      populateStudentBarangays(event.target.value);
+    });
+  }
+
+  function setStudentBirthDateBounds() {
+    const field = document.getElementById('fBirthDate');
+    const today = new Date();
+    const max = new Date(today.getFullYear() - 15, today.getMonth(), today.getDate());
+    const min = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
+    const toLocalDate = date => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+    field.max = toLocalDate(max);
+    field.min = toLocalDate(min);
+  }
+
+  function getStudentBirthDateError(value) {
+    if (!value) return 'Date of birth is required';
+    const birthDate = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return 'Enter a valid date of birth';
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    if (age < 15 || age > 80) return 'Age must be between 15 and 80 years old';
+    return null;
+  }
+
+  function openModal(data = null) {
+    document.getElementById('studentForm').reset();
+    document.getElementById('modalTitle').textContent = data ? 'Edit Student' : 'Add Student';
+    populateStudentProvince();
+    populateStudentMunicipalities('', data ? data.municipality || '' : '');
+    populateStudentBarangays(document.getElementById('fMunicipality').value, data ? data.barangay || '' : '');
+    document.getElementById('fRoleDisplay').value = 'Student';
+    document.getElementById('studentId').value   = data ? data.id : '';
+    document.getElementById('fStudentId').value  = data ? data.student_id : '';
+    document.getElementById('fFullName').value   = data ? data.full_name : '';
+    document.getElementById('fEmail').value      = data ? data.email || '' : '';
+    document.getElementById('fPhone').value      = data ? data.phone || '' : '';
+    document.getElementById('fBirthDate').value  = data ? data.date_of_birth || '' : '';
+    document.getElementById('fProvince').value   = data ? (data.province || 'LAGUNA').toUpperCase() : 'LAGUNA';
+    document.getElementById('fCourse').value     = data ? data.course || '' : '';
+    document.getElementById('fYear').value       = data ? data.year_level || '' : '';
+    document.getElementById('fSection').value    = data ? data.section || '' : '';
+    document.getElementById('fStudentId').readOnly = true;
+    if (!data) updateStudentIdPreview();
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  }
+
+  function editStudent(encoded) { openModal(JSON.parse(decodeURIComponent(encoded))); }
+  function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+  bindAutoNameCase(['fFullName']);
+  document.getElementById('fYear').addEventListener('change', updateStudentIdPreview);
+
+  document.getElementById('studentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('studentId').value;
+    const email = normalizeEmailValue(document.getElementById('fEmail').value);
+    const emailError = getEmailError(email);
+    if (emailError) { showToast(emailError, 'error'); return; }
+    const birthDate = document.getElementById('fBirthDate').value;
+    const birthDateError = getStudentBirthDateError(birthDate);
+    if (birthDateError) { showToast(birthDateError, 'error'); return; }
+    const municipality = getSelectedStudentMunicipalityLabel();
+    const barangay = document.getElementById('fBarangay').value;
+    if (!municipality) { showToast('Please select a municipality or city', 'error'); return; }
+    if (!barangay) { showToast('Please select a barangay', 'error'); return; }
+    const payload = {
+      id: id,
+      student_id: document.getElementById('fStudentId').value,
+      full_name:  document.getElementById('fFullName').value,
+      email:      email,
+      phone:      document.getElementById('fPhone').value,
+      date_of_birth: birthDate,
+      province:   document.getElementById('fProvince').value,
+      municipality: municipality,
+      barangay:   barangay,
+      course:     document.getElementById('fCourse').value,
+      year_level: document.getElementById('fYear').value,
+      section:    document.getElementById('fSection').value
+    };
+    const studentIdLabel = payload.student_id.includes('XXXX')
+      ? `Auto-generated (${payload.student_id})`
+      : (payload.student_id || '-');
+    const confirmed = await requestSaveConfirmation({
+      title: id ? 'Update Student' : 'Admin Confirmation',
+      message: id
+        ? 'Do you want to update this student?'
+        : `Please confirm adding this student:\n\nName: ${payload.full_name || '-'}\nStudent ID: ${studentIdLabel}\nCourse / Year / Section: ${payload.course || '-'} / ${payload.year_level || '-'} / ${payload.section || '-'}\nDate of Birth: ${payload.date_of_birth || '-'}\nAddress: ${payload.barangay || '-'}, ${payload.municipality || '-'}, ${payload.province || '-'}\nEmail: ${payload.email || '-'}`,
+      confirmText: id ? 'Yes' : 'Add Student'
+    });
+    if (!confirmed) return;
+    const res = id ? await API.put('/api/students', payload) : await API.post('/api/students', payload);
+    if (res.message) { closeModal(); loadStudents(); showToast(res.student_id ? `${res.message}: ${res.student_id}` : res.message, 'success'); }
+    else showToast(res.error || 'Error', 'error');
+  });
+
+  async function deleteStudent(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Archive Student',
+      message: 'This will move the student to Archived. You can restore it later. Continue?',
+      confirmText: 'Archive',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/students?id=' + id);
+    if (res.message) { loadStudents(); showToast('Student archived', 'success'); }
+  }
+
+  async function restoreStudent(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Restore Student',
+      message: 'Do you want to restore this student?',
+      confirmText: 'Restore',
+      cancelText: 'Cancel'
+    });
+    if (!confirmed) return;
+    const res = await API.put('/api/students', { id, action: 'restore' });
+    if (res.message) { loadStudents(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Restore failed', 'error');
+  }
+
+  async function permanentlyDeleteStudent(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Permanent Delete Student',
+      message: 'This will permanently delete the archived student and related attendance records. Continue?',
+      confirmText: 'Delete',
+      cancelText: 'Cancel'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/students?id=' + id + '&permanent=1');
+    if (res.message) { loadStudents(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Permanent delete failed', 'error');
+  }
+
+  async function showQR(id) {
+    const data = await API.get('/api/qr?student_id=' + id);
+    if (data.qr_data) {
+      // Use QRCode.js to render in a popup
+      const win = window.open('', '_blank', 'width=400,height=400');
+      win.document.write(`<html><body style="text-align:center;font-family:sans-serif;padding:20px">
+        <h3>QR Code - ${data.student_id}</h3>
+        <div id="qr"></div>
+        <p style="font-size:12px;color:#666">${data.qr_data}</p>
+        <script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"><\/script>
+        <script>new QRCode(document.getElementById('qr'),{text:'${data.qr_data}',width:256,height:256});<\/script>
+      </body></html>`);
+    }
+  }
+
+  function filterTable() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const course = document.getElementById('courseFilter').value;
+    const year = document.getElementById('yearFilter').value;
+    const filtered = studentsData.filter(s => {
+      const matchesSearch = [s.student_id, s.full_name, s.course, s.year_level, s.section, s.email]
+        .join(' ').toLowerCase().includes(q);
+      const matchesCourse = !course || s.course === course;
+      const matchesYear = !year || String(s.year_level || '') === year;
+      return matchesSearch && matchesCourse && matchesYear;
+    });
+    renderStudents(filtered);
+  }
+</script>
+</body>
+</html>

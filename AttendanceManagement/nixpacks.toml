@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["jdk17"]
+
+[phases.build]
+cmds = ["mkdir -p out", "javac -cp \"lib/*\" src/App.java src/ValidationUtils.java -d out"]
+
+[start]
+cmd = "java -cp \"out:lib/*\" App"

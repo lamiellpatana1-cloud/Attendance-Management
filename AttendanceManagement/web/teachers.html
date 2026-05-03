@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teachers - AttendEase</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header"><div class="logo-icon">🎓</div><span class="logo-text">AttendEase</span></div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">A</div>
+        <div><div class="user-name" id="userName">Loading...</div><div class="user-role" id="userRole">-</div></div>
+      </div>
+      
+    </div>
+  </aside>
+  <main class="main-content">
+    <header class="top-bar">
+      <button type="button" class="btn-icon" onclick="toggleSidebar()">☰</button>
+      <h2 class="page-title" id="teachersPageTitle">Manage Teachers</h2>
+      <div class="top-bar-right">
+        <input type="text" id="searchInput" placeholder="Search teachers..." class="search-input" oninput="filterTable()">
+        <select id="departmentFilter" class="search-input" onchange="filterTable()"><option value="">All Colleges</option></select>
+        <select id="subjectFilter" class="search-input" onchange="filterTable()"><option value="">All Courses</option></select>
+        <button type="button" class="btn btn-secondary" id="teachersArchiveToggleBtn" onclick="toggleArchiveView()">View Archived</button>
+        <button type="button" class="btn btn-primary" id="teachersAddBtn" onclick="openModal()">+ Add Teacher</button>
+      </div>
+    </header>
+    <div class="content-area">
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>College</th><th>Course</th><th>Contact No.</th><th>Actions</th></tr></thead>
+          <tbody id="teachersBody"><tr><td colspan="6" class="loading-row">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay hidden" id="modalOverlay">
+  <div class="modal student-profile-modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Teacher</h3>
+      <button type="button" class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="teacherForm">
+      <input type="hidden" id="teacherId">
+      <div class="form-row">
+        <div class="form-group"><label>First Name</label><input type="text" id="fFirstName" required></div>
+        <div class="form-group"><label>Middle Name (Optional)</label><input type="text" id="fMiddleName"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Last Name</label><input type="text" id="fLastName" required></div>
+        <div class="form-group"><label>Suffix</label><input type="text" id="fSuffix" placeholder="e.g. Jr., Sr., III"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Email</label><input type="email" id="fEmail" required></div>
+        <div class="form-group"><label>Contact No.</label><input type="text" id="fPhone"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>College</label><input type="text" id="fDept"></div>
+        <div class="form-group"><label>Course</label><input type="text" id="fSubject"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+  requireRole('admin');
+  renderNav();
+  let showArchived = false;
+  let teachersData = [];
+  const TEACHER_SUFFIXES = ['JR', 'SR', 'II', 'III', 'IV', 'V', 'VI'];
+  updateTeachersViewState();
+  loadTeachers();
+
+  async function loadTeachers() {
+    const data = await API.get('/api/teachers' + (showArchived ? '?archived=1' : ''));
+    teachersData = data || [];
+    populateTeacherFilters(teachersData);
+    filterTable();
+  }
+
+  function renderTeachers(data) {
+    const tbody = document.getElementById('teachersBody');
+    if (!data || data.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${showArchived ? 'No archived teachers found' : 'No teachers found'}</td></tr>`; return; }
+    tbody.innerHTML = data.map(t => `
+      <tr>
+        <td>${t.full_name}</td><td>${t.email}</td><td>${t.department||'-'}</td>
+        <td>${t.subject||'-'}</td><td>${t.phone||'-'}</td>
+        <td class="actions">
+          ${showArchived
+            ? `<button type="button" class="btn btn-sm btn-success" onclick="restoreTeacher(${t.id})">Restore</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="permanentlyDeleteTeacher(${t.id})">Permanent Delete</button>`
+            : `<button type="button" class="btn btn-sm btn-secondary" onclick="editTeacher('${encodeURIComponent(JSON.stringify(t))}')">Edit</button>
+               <button type="button" class="btn btn-sm btn-danger" onclick="deleteTeacher(${t.id})">Archive</button>`}
+        </td>
+      </tr>`).join('');
+  }
+
+  function populateTeacherFilters(data) {
+    const departmentFilter = document.getElementById('departmentFilter');
+    const subjectFilter = document.getElementById('subjectFilter');
+    const currentDepartment = departmentFilter.value;
+    const currentSubject = subjectFilter.value;
+    const departments = [...new Set(data.map(t => t.department || '').filter(Boolean))].sort();
+    const subjects = [...new Set(data.map(t => t.subject || '').filter(Boolean))].sort();
+    departmentFilter.innerHTML = '<option value="">All Colleges</option>' + departments.map(dept => `<option value="${dept}">${dept}</option>`).join('');
+    subjectFilter.innerHTML = '<option value="">All Courses</option>' + subjects.map(subject => `<option value="${subject}">${subject}</option>`).join('');
+    departmentFilter.value = departments.includes(currentDepartment) ? currentDepartment : '';
+    subjectFilter.value = subjects.includes(currentSubject) ? currentSubject : '';
+  }
+
+  function splitTeacherFullName(fullName) {
+    const tokens = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return { firstName: '', middleName: '', lastName: '', suffix: '' };
+
+    let suffix = '';
+    const possibleSuffix = tokens[tokens.length - 1].replace(/\./g, '').toUpperCase();
+    if (TEACHER_SUFFIXES.includes(possibleSuffix)) suffix = tokens.pop();
+
+    const lastName = tokens.length ? tokens.pop() : '';
+    const firstName = tokens.length ? tokens.shift() : '';
+    const middleName = tokens.join(' ');
+    return { firstName, middleName, lastName, suffix };
+  }
+
+  function buildTeacherFullName() {
+    const firstName = toNameCase(document.getElementById('fFirstName').value);
+    const middleName = toNameCase(document.getElementById('fMiddleName').value);
+    const lastName = toNameCase(document.getElementById('fLastName').value);
+    const suffix = String(document.getElementById('fSuffix').value || '').trim();
+    return [firstName, middleName, lastName, suffix].filter(Boolean).join(' ').trim();
+  }
+
+  function updateTeachersViewState() {
+    document.getElementById('teachersPageTitle').textContent = showArchived ? 'Archived Teachers' : 'Manage Teachers';
+    document.getElementById('teachersArchiveToggleBtn').textContent = showArchived ? 'Back to Active' : 'View Archived';
+    document.getElementById('teachersAddBtn').classList.toggle('hidden', showArchived);
+  }
+
+  function toggleArchiveView() {
+    showArchived = !showArchived;
+    updateTeachersViewState();
+    loadTeachers();
+  }
+
+  function openModal(data=null) {
+    document.getElementById('teacherForm').reset();
+    document.getElementById('modalTitle').textContent = data ? 'Edit Teacher' : 'Add Teacher';
+    const nameParts = splitTeacherFullName(data ? data.full_name : '');
+    document.getElementById('teacherId').value  = data ? data.id : '';
+    document.getElementById('fFirstName').value = nameParts.firstName;
+    document.getElementById('fMiddleName').value = nameParts.middleName;
+    document.getElementById('fLastName').value = nameParts.lastName;
+    document.getElementById('fSuffix').value = nameParts.suffix;
+    document.getElementById('fEmail').value     = data ? data.email : '';
+    document.getElementById('fPhone').value     = data ? data.phone||'' : '';
+    document.getElementById('fDept').value      = data ? data.department||'' : '';
+    document.getElementById('fSubject').value   = data ? data.subject||'' : '';
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  }
+  function editTeacher(encoded) { openModal(JSON.parse(decodeURIComponent(encoded))); }
+  function closeModal() { document.getElementById('modalOverlay').classList.add('hidden'); }
+  bindAutoNameCase(['fFirstName', 'fMiddleName', 'fLastName']);
+
+  document.getElementById('teacherForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('teacherId').value;
+    const email = normalizeEmailValue(document.getElementById('fEmail').value);
+    const emailError = getEmailError(email);
+    if (emailError) { showToast(emailError, 'error'); return; }
+    if (!document.getElementById('fFirstName').value.trim() || !document.getElementById('fLastName').value.trim()) {
+      showToast('First name and last name are required', 'error');
+      return;
+    }
+    const payload = { id, full_name: buildTeacherFullName(),
+      email: email, phone: document.getElementById('fPhone').value,
+      department: document.getElementById('fDept').value, subject: document.getElementById('fSubject').value };
+    const confirmed = await requestSaveConfirmation({
+      title: id ? 'Update Teacher' : 'Admin Confirmation',
+      message: id
+        ? 'Do you want to update this teacher?'
+        : `Please confirm adding this teacher:\n\nName: ${payload.full_name || '-'}\nCollege: ${payload.department || '-'}\nCourse: ${payload.subject || '-'}\nEmail: ${payload.email || '-'}\nContact No.: ${payload.phone || '-'}`,
+      confirmText: id ? 'Yes' : 'Add Teacher'
+    });
+    if (!confirmed) return;
+    const res = id ? await API.put('/api/teachers', payload) : await API.post('/api/teachers', payload);
+    if (res.message) { closeModal(); loadTeachers(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Error', 'error');
+  });
+
+  async function deleteTeacher(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Archive Teacher',
+      message: 'This will move the teacher to Archived. You can restore it later. Continue?',
+      confirmText: 'Archive',
+      cancelText: 'No'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/teachers?id=' + id);
+    if (res.message) { loadTeachers(); showToast('Teacher archived', 'success'); }
+  }
+
+  async function restoreTeacher(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Restore Teacher',
+      message: 'Do you want to restore this teacher?',
+      confirmText: 'Restore',
+      cancelText: 'Cancel'
+    });
+    if (!confirmed) return;
+    const res = await API.put('/api/teachers', { id, action: 'restore' });
+    if (res.message) { loadTeachers(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Restore failed', 'error');
+  }
+
+  async function permanentlyDeleteTeacher(id) {
+    const confirmed = await showConfirmModal({
+      title: 'Permanent Delete Teacher',
+      message: 'This will permanently delete the archived teacher account. Active courses must be reassigned first. Archived courses will be detached automatically. Continue?',
+      confirmText: 'Delete',
+      cancelText: 'Cancel'
+    });
+    if (!confirmed) return;
+    const res = await API.delete('/api/teachers?id=' + id + '&permanent=1');
+    if (res.message) { loadTeachers(); showToast(res.message, 'success'); }
+    else showToast(res.error || 'Permanent delete failed', 'error');
+  }
+
+  function filterTable() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const department = document.getElementById('departmentFilter').value;
+    const subject = document.getElementById('subjectFilter').value;
+    const filtered = teachersData.filter(t => {
+      const matchesSearch = [t.full_name, t.email, t.department, t.subject, t.phone]
+        .join(' ').toLowerCase().includes(q);
+      const matchesDepartment = !department || t.department === department;
+      const matchesSubject = !subject || t.subject === subject;
+      return matchesSearch && matchesDepartment && matchesSubject;
+    });
+    renderTeachers(filtered);
+  }
+</script>
+</body>
+</html>
